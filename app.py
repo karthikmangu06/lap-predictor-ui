@@ -21,7 +21,7 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Max Verstappen Lap Time Simulator",
-    page_icon="F1",
+    page_icon="🏎️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -189,7 +189,6 @@ st.markdown(
 # CONSTANTS
 # ------------------------------------------------------------------------------
 
-# Only circuits the model was trained on should be listed here.
 TRACK_LAPS = {
     "70th Anniversary": 52, "Abu Dhabi": 58, "Australia": 58,
     "Austria": 71, "Azerbaijan": 51, "Bahrain": 57,
@@ -221,7 +220,6 @@ TEST_CASES = [
     {"name": "4. Barcelona (Balanced technical)", "circuit": "Spain", "lap_number": 22,
      "stint_number": 1, "tyre_compound": "MEDIUM", "tyre_age": 21,
      "fuel_laps_remaining": 25, "driver_pushing": True, "clear_track": True},
-    # Singapore was replaced: it is not in TRACK_LAPS, so the model has probably not seen it.
     {"name": "5. Hungaroring (Tyre-degradation heavy)", "circuit": "Hungary", "lap_number": 18,
      "stint_number": 1, "tyre_compound": "SOFT", "tyre_age": 8,
      "fuel_laps_remaining": 52, "driver_pushing": True, "clear_track": True},
@@ -237,7 +235,7 @@ TEST_CASES = [
 ]
 
 # ------------------------------------------------------------------------------
-# MODEL LOADING (cached so it only loads once)
+# MODEL LOADING & PREDICTION CACHING
 # ------------------------------------------------------------------------------
 
 @st.cache_resource(show_spinner="Loading prediction model ...")
@@ -247,7 +245,6 @@ def load_model(model_path: str = "max_lap_predictor.pkl"):
         return joblib.load(model_path)
     except FileNotFoundError:
         return None
-
 
 # ------------------------------------------------------------------------------
 # HELPERS
@@ -288,8 +285,9 @@ def build_input_df(
     return df[FEATURE_COLUMNS]
 
 
-def run_all_tests(model) -> pd.DataFrame:
-    """Run all batch test cases and return the results as a DataFrame."""
+@st.cache_data
+def run_all_tests_cached(_model) -> pd.DataFrame:
+    """Run all batch test cases with Streamlit caching to prevent CPU spikes."""
     results = []
     for test in TEST_CASES:
         input_df = build_input_df(
@@ -303,7 +301,7 @@ def run_all_tests(model) -> pd.DataFrame:
             is_clear_track=test["clear_track"],
         )
         try:
-            predicted_ms = float(model.predict(input_df)[0])
+            predicted_ms = float(_model.predict(input_df)[0])
             predicted_time_str = ms_to_laptime(predicted_ms)
             notes = "Success"
         except Exception as exc:
@@ -377,7 +375,6 @@ def main() -> None:
             help=f"Which lap of the race is VER on? ({track} = {max_laps} laps)",
         )
 
-        # Keyed by lap/track so the default re-syncs when either changes.
         fuel_laps_remaining = st.slider(
             "Fuel Laps Remaining",
             min_value=0,
@@ -451,9 +448,7 @@ def main() -> None:
             )
 
             try:
-                with st.spinner("Calculating predicted lap time ..."):
-                    predicted_ms = float(model.predict(input_df)[0])
-
+                predicted_ms = float(model.predict(input_df)[0])
                 formatted_time = ms_to_laptime(predicted_ms)
 
                 st.markdown(
@@ -525,7 +520,7 @@ def main() -> None:
                 """
                 <div style="border: 1px dashed rgba(255,107,0,0.3); border-radius: 16px;
                             padding: 3rem 2rem; text-align: center; color: #666;">
-                    <div style="font-size:3rem;margin-bottom:1rem">F1</div>
+                    <div style="font-size:3rem;margin-bottom:1rem">🏁</div>
                     <div style="font-family:'Orbitron',sans-serif;font-size:1rem;color:#888;letter-spacing:0.1em">
                         CONFIGURE CONDITIONS IN THE SIDEBAR<br>THEN PRESS SIMULATE
                     </div>
@@ -580,9 +575,7 @@ def main() -> None:
     st.markdown("### Batch Simulations")
     with st.expander("Run Pre-Configured Test Cases"):
         if st.button("Execute Batch Tests", key="batch_btn", use_container_width=True):
-            with st.spinner("Running batch simulations..."):
-                # Saved in session_state so results survive reruns.
-                st.session_state["batch_results"] = run_all_tests(model)
+            st.session_state["batch_results"] = run_all_tests_cached(model)
 
         if "batch_results" in st.session_state:
             st.dataframe(st.session_state["batch_results"], use_container_width=True)
