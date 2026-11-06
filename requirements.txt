@@ -1,5 +1,9 @@
 streamlit
 pandas
+numpy
 joblib
+pydeck
+pyarrow
+scipy
 scikit-learn==1.6.1
 xgboost==3.3.0
